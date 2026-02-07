@@ -2,11 +2,232 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Referee Tracker</title>
+    <style>
+        /* Ultra-stable CSS for offline mobile use */
+        body { 
+            background: #0f172a; 
+            color: #f8fafc; 
+            font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            margin: 0; 
+            padding: 10px;
+        }
+
+        .header-box { 
+            background: #1e293b; 
+            padding: 15px; 
+            border-radius: 12px;
+            border: 2px solid #38bdf8; 
+            margin-bottom: 20px;
+        }
+
+        .section-label { 
+            font-size: 10px; 
+            color: #94a3b8; 
+            text-transform: uppercase; 
+            text-align: center; 
+            margin-bottom: 10px; 
+            letter-spacing: 1px;
+        }
+
+        /* Ball Grid - Standard centering */
+        .ball-grid { text-align: center; }
+        .ball-btn { 
+            display: inline-block; 
+            width: 18%; 
+            aspect-ratio: 1 / 1;
+            margin: 1%; 
+            background: #334155; 
+            border: none; 
+            color: white; 
+            border-radius: 50%; 
+            font-weight: bold; 
+            font-size: 1.1rem;
+            vertical-align: middle;
+        }
+        .ball-btn.active { background: #38bdf8; color: #0f172a; box-shadow: 0 0 15px #38bdf8; }
+        .ball-btn:disabled { opacity: 0.1; text-decoration: line-through; }
+
+        .control-row { display: flex; gap: 8px; margin-top: 15px; }
+        .mode-btn { 
+            flex: 1; 
+            padding: 12px; 
+            border-radius: 8px; 
+            border: none;
+            background: #475569; 
+            color: white; 
+            font-weight: bold; 
+            font-size: 0.75rem;
+        }
+        .mode-btn.foul-active { background: #ef4444; border: 2px solid white; }
+
+        /* Player Cards */
+        .player-card { 
+            background: #1e293b; 
+            margin-bottom: 12px; 
+            padding: 15px; 
+            border-radius: 12px; 
+            border: 1px solid #334155;
+        }
+        .player-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+        .player-name { 
+            flex: 1; 
+            background: #0f172a; 
+            border: 1px solid #444; 
+            color: #fff; 
+            font-size: 1rem; 
+            padding: 10px; 
+            border-radius: 6px;
+            font-weight: bold;
+        }
+        .player-score { font-size: 2.2rem; font-weight: 900; color: #facc15; margin-left: 15px; }
+        
+        .assign-btn { 
+            width: 100%; 
+            padding: 16px; 
+            background: #10b981; 
+            color: white; 
+            border: none; 
+            border-radius: 8px; 
+            font-weight: bold; 
+            font-size: 1rem;
+            box-shadow: 0 4px 0 #065f46;
+        }
+        .assign-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #065f46; }
+
+        .history-list { margin-top: 12px; min-height: 20px; }
+        .history-tag { 
+            display: inline-block; 
+            padding: 2px 8px; 
+            margin: 2px; 
+            border-radius: 4px; 
+            font-size: 0.8rem; 
+            background: #0f172a; 
+            border: 1px solid #334155; 
+        }
+        .plus { color: #4ade80; } 
+        .minus { color: #f87171; font-weight: bold; }
+
+        .master-reset { 
+            width: 100%; 
+            padding: 20px; 
+            margin: 40px 0; 
+            border-radius: 8px; 
+            border: 2px dashed #475569; 
+            background: transparent; 
+            color: #94a3b8; 
+            font-weight: bold; 
+        }
+    </style>
 </head>
 <body>
-    <h1>Welcome to the Referee Tracker Application</h1>
-    <p>This application helps manage referee assignments and schedules.</p>
+
+    <div class="header-box">
+        <div class="section-label">1. Pick a Ball</div>
+        <div class="ball-grid" id="grid"></div>
+        
+        <div class="control-row">
+            <button class="mode-btn" id="mBtn" onclick="setMode()">MODE: ADD (+)</button>
+            <button class="mode-btn" onclick="resetBalls()">Reset Balls</button>
+        </div>
+    </div>
+
+    <div id="players"></div>
+
+    <button class="master-reset" onclick="if(confirm('Clear all scores and names?')) location.reload()">RESET FULL MATCH</button>
+
+<script>
+    let selIdx = null;
+    let isFoul = false;
+    const vals = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
+    const used = Array(vals.length).fill(false);
+
+    // Build Balls
+    const g = document.getElementById('grid');
+    vals.forEach((v, i) => {
+        g.innerHTML += `<button class="ball-btn" id="v${i}" onclick="sel(${i})">${v}</button>`;
+    });
+
+    // Build 7 Players
+    const pContainer = document.getElementById('players');
+    for (let i = 0; i < 7; i++) {
+        pContainer.innerHTML += `
+            <div class="player-card">
+                <div class="player-header">
+                    <input class="player-name" value="Player ${i+1}">
+                    <div class="player-score" id="s${i}">0</div>
+                </div>
+                <button class="assign-btn" id="ab${i}" onclick="give(${i})">ASSIGN POINTS</button>
+                <div class="history-list" id="h${i}"></div>
+            </div>
+        `;
+    }
+
+    function sel(i) {
+        if (used[i] && !isFoul) return;
+        document.querySelectorAll('.ball-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('v' + i).classList.add('active');
+        selIdx = i;
+    }
+
+    function setMode() {
+        isFoul = !isFoul;
+        const b = document.getElementById('mBtn');
+        b.classList.toggle('foul-active');
+        b.innerText = isFoul ? "MODE: FOUL (-)" : "MODE: ADD (+)";
+        
+        document.querySelectorAll('.assign-btn').forEach(btn => {
+            btn.style.background = isFoul ? "#ef4444" : "#10b981";
+            btn.style.boxShadow = isFoul ? "0 4px 0 #991b1b" : "0 4px 0 #065f46";
+        });
+
+        vals.forEach((v, i) => {
+            const btn = document.getElementById('v' + i);
+            if (isFoul) {
+                btn.style.opacity = "1";
+                btn.style.textDecoration = "none";
+                btn.disabled = false;
+            } else if (used[i]) {
+                btn.style.opacity = "0.1";
+                btn.style.textDecoration = "line-through";
+                btn.disabled = true;
+            }
+        });
+    }
+
+    function give(pId) {
+        if (selIdx === null) return;
+        
+        let ball = vals[selIdx];
+        let pts = (ball >= 3 && ball <= 5) ? 6 : ball;
+        let final = isFoul ? (pts * -1) : pts;
+        
+        const sEl = document.getElementById('s' + pId);
+        sEl.innerText = parseInt(sEl.innerText) + final;
+
+        const hEl = document.getElementById('h' + pId);
+        hEl.innerHTML += `<span class="history-tag ${isFoul?'minus':'plus'}">${final}</span>`;
+
+        if (!isFoul) {
+            used[selIdx] = true;
+            const b = document.getElementById('v' + selIdx);
+            b.disabled = true;
+            b.classList.remove('active');
+            selIdx = null;
+        }
+    }
+
+    function resetBalls() {
+        used.fill(false);
+        document.querySelectorAll('.ball-btn').forEach(b => { 
+            b.disabled = false; 
+            b.classList.remove('active');
+            b.style.opacity = "1";
+            b.style.textDecoration = "none";
+        });
+        selIdx = null;
+    }
+</script>
 </body>
 </html>
